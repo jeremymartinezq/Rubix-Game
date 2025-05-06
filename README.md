@@ -1,6 +1,8 @@
 # Rubik's Cube Game
 
 A 3D interactive Rubik's Cube game built with Three.js, HTML5 Canvas, and CSS.
+![Screenshot 2025-05-05 235541](https://github.com/user-attachments/assets/a6709a24-f568-498e-bbaf-e9cf2a4f7044)
+
 
 ## Features
 
@@ -58,10 +60,11 @@ This game works best on modern browsers that support WebGL:
 - For the best experience, use a device with hardware acceleration
 - Close other resource-intensive applications for smoother performance
 
-## Credits
-
-Created by [Your Name] based on the classic Rubik's Cube puzzle.
-
 ## License
 
 MIT License 
+
+## Author
+
+Developed by Jeremy Martinez-Quinones based on the classic Rubik's Cube puzzle.
+
