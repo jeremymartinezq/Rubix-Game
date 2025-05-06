@@ -1,0 +1,491 @@
+// Main Three.js setup and animation loop
+class RubiksCubeGame {
+    constructor() {
+        // Check for WebGL support
+        if (!this.checkWebGLSupport()) {
+            alert('Your browser does not support WebGL, which is required for this game. Please try a different browser.');
+            return;
+        }
+
+        this.container = document.getElementById('canvas-container');
+        this.width = this.container.clientWidth;
+        this.height = this.container.clientHeight;
+        
+        this.setupScene();
+        this.setupLighting();
+        this.setupCube();
+        this.setupEffects();
+        this.setupControls();
+        this.setupShaders();
+        this.setupPhysics();
+        
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        
+        // Prevent context menu on right-click (used for camera control)
+        this.container.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        this.clock = new THREE.Clock();
+        this.animate();
+        
+        // Track move count
+        this.moveCounter = 0;
+        this.moveCounterDisplay = document.getElementById('moves-counter');
+        this.setupMoveTracking();
+        
+        // Configure performance
+        this.lastFrameTime = 0;
+        this.frameRate = 0;
+        this.frameRateSmoothing = 0.9; // Higher = more smoothing
+        this.dynamicQuality = true;
+        
+        console.log('Rubik\'s Cube game initialized successfully');
+        
+        // Initial quality setting based on device performance
+        this.detectPerformance();
+    }
+    
+    detectPerformance() {
+        // Check if running on mobile device
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        // Set initial quality based on device type
+        if (isMobile) {
+            this.setQualityLevel('low');
+        } else {
+            // Start with medium quality, will adjust based on frame rate
+            this.setQualityLevel('medium');
+        }
+    }
+    
+    setQualityLevel(level) {
+        switch(level) {
+            case 'low':
+                this.renderer.setPixelRatio(1);
+                this.renderer.shadowMap.enabled = false;
+                this.effects.setParticleCount(200);
+                break;
+            case 'medium':
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.effects.setParticleCount(300);
+                break;
+            case 'high':
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.effects.setParticleCount(500);
+                break;
+        }
+        
+        // Re-render at new quality
+        this.renderer.render(this.scene, this.camera);
+    }
+    
+    checkWebGLSupport() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(window.WebGLRenderingContext && 
+                     (canvas.getContext('webgl') || 
+                      canvas.getContext('experimental-webgl')));
+        } catch (e) {
+            return false;
+        }
+    }
+    
+    setupScene() {
+        try {
+            // Create scene
+            this.scene = new THREE.Scene();
+            
+            // Brighter background - remove fog and lighten background color
+            // this.scene.fog = new THREE.FogExp2(0x111111, 0.025);
+            this.scene.background = new THREE.Color(0xaaaaaa);
+            
+            // Create camera
+            this.camera = new THREE.PerspectiveCamera(45, this.width / this.height, 0.1, 1000);
+            this.camera.position.set(5, 5, 5);
+            this.camera.lookAt(0, 0, 0);
+            
+            // Create renderer with antialiasing for smoother edges
+            this.renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true,
+                powerPreference: 'high-performance'
+            });
+            this.renderer.setSize(this.width, this.height);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for better performance
+            
+            // Enable shadows
+            this.renderer.shadowMap.enabled = true;
+            this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Add output to container
+            this.container.appendChild(this.renderer.domElement);
+            
+            // Add a subtle vignette post-processing effect
+            this.setupPostProcessing();
+            
+            console.log('Scene setup complete');
+        } catch (error) {
+            console.error('Error setting up scene:', error);
+        }
+    }
+    
+    setupPostProcessing() {
+        // Add a subtle background gradient
+        const gradientCanvas = document.createElement('canvas');
+        gradientCanvas.width = 512;
+        gradientCanvas.height = 512;
+        const ctx = gradientCanvas.getContext('2d');
+        
+        // Create radial gradient with brighter colors
+        const gradient = ctx.createRadialGradient(
+            256, 256, 0,
+            256, 256, 512
+        );
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(1, '#222');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+        
+        const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
+        const gradientMaterial = new THREE.MeshBasicMaterial({
+            map: gradientTexture,
+            depthWrite: false,
+            depthTest: false,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.BackSide
+        });
+        
+        // Create a large sphere to contain the background
+        const backgroundSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(40, 32, 32),
+            gradientMaterial
+        );
+        this.scene.add(backgroundSphere);
+    }
+    
+    setupShaders() {
+        // Add a subtle pulsing glow to the selected cube face
+        // This is handled by the cube highlighters which already exist
+    }
+    
+    setupPhysics() {
+        // Add a subtle bounce effect when cube faces rotate
+        this.bounceEffect = {
+            enabled: true,
+            amplitude: 0.05,
+            frequency: 2.0
+        };
+    }
+    
+    setupLighting() {
+        try {
+            // Increase ambient light intensity
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            this.scene.add(ambientLight);
+            
+            // Increase main light intensity
+            const mainLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            mainLight.position.set(10, 10, 10);
+            mainLight.castShadow = true;
+            
+            // Configure shadow quality
+            mainLight.shadow.camera.left = -5;
+            mainLight.shadow.camera.right = 5;
+            mainLight.shadow.camera.top = 5;
+            mainLight.shadow.camera.bottom = -5;
+            mainLight.shadow.camera.near = 1;
+            mainLight.shadow.camera.far = 30;
+            mainLight.shadow.mapSize.width = 1024;
+            mainLight.shadow.mapSize.height = 1024;
+            mainLight.shadow.bias = -0.001;
+            
+            this.scene.add(mainLight);
+            
+            // Add subtle point lights for a more dynamic look
+            const colors = [0x8844ff, 0x44aaff, 0x44ffaa, 0xffaa44];
+            colors.forEach((color, index) => {
+                // Increase point light intensity
+                const light = new THREE.PointLight(color, 1.2, 30);
+                const angle = (index / colors.length) * Math.PI * 2;
+                const radius = 8;
+                light.position.set(
+                    Math.cos(angle) * radius,
+                    Math.sin(angle) * radius / 2 + 5,
+                    Math.sin(angle) * Math.cos(angle) * radius
+                );
+                
+                // Add subtle shadows from point lights
+                light.castShadow = true;
+                light.shadow.camera.near = 0.5;
+                light.shadow.camera.far = 20;
+                light.shadow.bias = -0.005;
+                light.shadow.mapSize.width = 512;
+                light.shadow.mapSize.height = 512;
+                
+                this.scene.add(light);
+            });
+            
+            // Lighten the ground plane
+            const groundGeometry = new THREE.PlaneGeometry(30, 30);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xcccccc,
+                roughness: 0.8,
+                metalness: 0.2,
+                transparent: true,
+                opacity: 0.5
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -5;
+            ground.receiveShadow = true;
+            this.scene.add(ground);
+            
+            console.log('Lighting setup complete');
+        } catch (error) {
+            console.error('Error setting up lighting:', error);
+        }
+    }
+    
+    setupCube() {
+        try {
+            // Create the Rubik's Cube
+            this.cube = new RubiksCube(3);
+            this.cube.init(this.scene);
+            
+            // Add a subtle background grid
+            const gridHelper = new THREE.GridHelper(20, 20, 0x555555, 0x222222);
+            gridHelper.position.y = -5;
+            this.scene.add(gridHelper);
+            
+            // Add a subtle platform under the cube
+            const platformGeometry = new THREE.CylinderGeometry(2, 2.2, 0.2, 32);
+            const platformMaterial = new THREE.MeshStandardMaterial({
+                color: 0xcccccc,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+            platform.position.y = -1.6;
+            platform.receiveShadow = true;
+            this.scene.add(platform);
+            
+            console.log('Cube setup complete');
+        } catch (error) {
+            console.error('Error setting up cube:', error);
+        }
+    }
+    
+    setupEffects() {
+        try {
+            // Add visual effects
+            this.effects = new CubeEffects(this.scene);
+            console.log('Effects setup complete');
+        } catch (error) {
+            console.error('Error setting up effects:', error);
+        }
+    }
+    
+    setupControls() {
+        try {
+            // Create the cube controls
+            this.controls = new CubeControls(this.cube, this.camera, this.renderer);
+            console.log('Controls setup complete');
+        } catch (error) {
+            console.error('Error setting up controls:', error);
+        }
+    }
+    
+    setupMoveTracking() {
+        try {
+            // Track moves by monitoring the cube's move history
+            const originalRotateFace = this.cube.rotateFace.bind(this.cube);
+            this.cube.rotateFace = (face, direction) => {
+                originalRotateFace(face, direction);
+                
+                // Create sparkle effect at the rotation position
+                if (!this.cube.isSolving) {
+                    this.moveCounter++;
+                    this.moveCounterDisplay.textContent = `Moves: ${this.moveCounter}`;
+                    
+                    // Get the position of the face being rotated for the sparkle effect
+                    try {
+                        const position = this.getFacePosition(face);
+                        this.effects.createSparkles(position, 5);
+                    } catch (error) {
+                        console.error('Error creating sparkles:', error);
+                    }
+                }
+            };
+            
+            // Override the solve and reset methods to reset the move counter
+            const originalReset = this.cube.reset.bind(this.cube);
+            this.cube.reset = () => {
+                originalReset();
+                this.resetMoveCounter();
+            };
+            
+            const originalSolve = this.cube.solve.bind(this.cube);
+            this.cube.solve = () => {
+                originalSolve();
+                this.resetMoveCounter();
+            };
+            
+            // Add completion check
+            const originalFinishRotation = this.cube.finishRotation.bind(this.cube);
+            this.cube.finishRotation = () => {
+                originalFinishRotation();
+                
+                // Check if solved
+                if (this.controls.gameStarted && this.cube.isSolved()) {
+                    this.controls.stopTimer();
+                    this.effects.createVictoryEffect();
+                    setTimeout(() => {
+                        alert(`Congratulations! You solved the cube in ${this.moveCounter} moves!`);
+                    }, 500);
+                }
+            };
+            
+            console.log('Move tracking setup complete');
+        } catch (error) {
+            console.error('Error setting up move tracking:', error);
+        }
+    }
+    
+    resetMoveCounter() {
+        this.moveCounter = 0;
+        this.moveCounterDisplay.textContent = `Moves: ${this.moveCounter}`;
+    }
+    
+    getFacePosition(face) {
+        // Calculate the position based on the cube size
+        const cubeSize = this.cube.cubeSize;
+        const offset = cubeSize / 2 + 0.1; // Add a small offset to place effects just outside the cube
+        
+        // Map face names to positions on the cube
+        const posMap = {
+            'front': new THREE.Vector3(0, 0, offset),
+            'back': new THREE.Vector3(0, 0, -offset),
+            'up': new THREE.Vector3(0, offset, 0),
+            'down': new THREE.Vector3(0, -offset, 0),
+            'right': new THREE.Vector3(offset, 0, 0),
+            'left': new THREE.Vector3(-offset, 0, 0)
+        };
+        
+        // Create a new vector so we don't modify the original
+        return posMap[face].clone();
+    }
+    
+    onWindowResize() {
+        this.width = this.container.clientWidth;
+        this.height = this.container.clientHeight;
+        
+        this.camera.aspect = this.width / this.height;
+        this.camera.updateProjectionMatrix();
+        
+        this.renderer.setSize(this.width, this.height);
+    }
+    
+    update(timestamp) {
+        const delta = this.clock.getDelta();
+        
+        // Calculate frame rate for dynamic quality adjustment
+        if (this.lastFrameTime) {
+            const instantFPS = 1 / delta;
+            this.frameRate = this.frameRate ? 
+                this.frameRate * this.frameRateSmoothing + instantFPS * (1 - this.frameRateSmoothing) :
+                instantFPS;
+            
+            // Dynamic quality adjustment if enabled
+            if (this.dynamicQuality && timestamp - this.lastQualityCheck > 2000) {
+                this.lastQualityCheck = timestamp;
+                
+                if (this.frameRate < 30) {
+                    this.setQualityLevel('low');
+                } else if (this.frameRate > 55) {
+                    this.setQualityLevel('high');
+                } else {
+                    this.setQualityLevel('medium');
+                }
+            }
+        }
+        this.lastFrameTime = timestamp;
+        
+        // Apply bounce effect to cube when rotating
+        if (this.bounceEffect && this.bounceEffect.enabled && this.cube.isRotating) {
+            const bounceOffset = Math.sin(timestamp * 0.01 * this.bounceEffect.frequency) * this.bounceEffect.amplitude;
+            this.cube.rotationGroup.position.y = bounceOffset;
+        } else if (this.cube.rotationGroup.position.y !== 0) {
+            // Reset position when not rotating
+            this.cube.rotationGroup.position.y = 0;
+        }
+        
+        try {
+            // Update cube rotation animation
+            if (this.cube) {
+                this.cube.updateRotation(delta);
+            }
+            
+            // Update effects
+            if (this.effects) {
+                this.effects.update(delta);
+            }
+            
+            // Update controls
+            if (this.controls) {
+                this.controls.update(delta);
+            }
+            
+            // Render scene
+            if (this.renderer && this.scene && this.camera) {
+                this.renderer.render(this.scene, this.camera);
+            }
+        } catch (error) {
+            console.error('Error in animation loop:', error);
+        }
+    }
+    
+    animate(timestamp) {
+        requestAnimationFrame(this.animate.bind(this));
+        this.update(timestamp);
+    }
+}
+
+// Initialize the game when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const game = new RubiksCubeGame();
+        
+        // Add some intro animation
+        const title = document.getElementById('game-title');
+        if (title) {
+            title.classList.add('animate-in');
+        }
+        
+        // Add a loading indicator
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.style.position = 'absolute';
+        loadingIndicator.style.top = '50%';
+        loadingIndicator.style.left = '50%';
+        loadingIndicator.style.transform = 'translate(-50%, -50%)';
+        loadingIndicator.style.background = 'rgba(0,0,0,0.7)';
+        loadingIndicator.style.color = 'white';
+        loadingIndicator.style.padding = '20px';
+        loadingIndicator.style.borderRadius = '5px';
+        loadingIndicator.style.zIndex = '1000';
+        loadingIndicator.textContent = 'Loading...';
+        document.body.appendChild(loadingIndicator);
+        
+        // Remove the loading indicator after a short delay
+        setTimeout(() => {
+            document.body.removeChild(loadingIndicator);
+        }, 1000);
+    } catch (error) {
+        console.error('Error initializing game:', error);
+        alert('There was an error initializing the game. Please try refreshing the page.');
+    }
+}); 
